@@ -1,6 +1,7 @@
 /****************************************************************************
  Copyright (c) 2010-2012 cocos2d-x.org
- Copyright (c) 2013-2017 Chukong Technologies Inc.
+ Copyright (c) 2013-2016 Chukong Technologies Inc.
+ Copyright (c) 2017-2018 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos2d-x.org
 
@@ -28,6 +29,7 @@
  ****************************************************************************/
 
 #include "network/WebSocket.h"
+#include "network/Uri.h"
 #include "base/CCDirector.h"
 #include "base/CCScheduler.h"
 #include "base/CCEventDispatcher.h"
@@ -361,6 +363,7 @@ void WsThreadHelper::onSubThreadLoop()
                 if (msg->what == WS_MSG_TO_SUBTHREAD_CREATE_CONNECTION)
                 {
                     ws->onClientOpenConnectionRequest();
+                    delete *iter;
                     iter = __wsHelper->_subThreadWsMessageQueue->erase(iter);
                 }
                 else
@@ -508,6 +511,7 @@ void WebSocket::closeAllConnections()
 
         std::lock_guard<std::mutex> lk(__instanceMutex);
         __websocketInstances->clear();
+        delete __websocketInstances;
         __websocketInstances = nullptr;
     }
 }
@@ -581,11 +585,8 @@ bool WebSocket::init(const Delegate& delegate,
     _url = url;
     _caFilePath = caFilePath;
 
-    // make sure url start with 'ws://' or 'wss://'
-    if (_url.size() < 6)
+    if (_url.empty())
         return false;
-
-    CCASSERT(0 == strncmp(_url.c_str(), "ws://", 5) || 0 == strncmp(_url.c_str(), "wss://", 6), "Invalid URL");
 
     if (protocols != nullptr && !protocols->empty())
     {
@@ -616,14 +617,11 @@ bool WebSocket::init(const Delegate& delegate,
         }
     }
 
-    // WebSocket thread needs to be invoked at the end of this method.
+    bool isWebSocketThreadCreated = true;
     if (__wsHelper == nullptr)
     {
         __wsHelper = new (std::nothrow) WsThreadHelper();
-        // https://github.com/cocos2d/cocos2d-x/issues/17433
-        // lws_service(__wsContext, 2); 
-        // this function called must be after ws->onClientOpenConnectionRequest  or crash
-        // __wsHelper->createWebSocketThread();
+        isWebSocketThreadCreated = false;
     }
 
     WsMessage* msg = new (std::nothrow) WsMessage();
@@ -631,7 +629,13 @@ bool WebSocket::init(const Delegate& delegate,
     msg->user = this;
     __wsHelper->sendMessageToWebSocketThread(msg);
 
-    __wsHelper->createWebSocketThread();
+    // fixed https://github.com/cocos2d/cocos2d-x/issues/17433
+    // createWebSocketThread has to be after message WS_MSG_TO_SUBTHREAD_CREATE_CONNECTION was sent.
+    // And websocket thread should only be created once.
+    if (!isWebSocketThreadCreated)
+    {
+        __wsHelper->createWebSocketThread();
+    }
 
     return true;
 }
@@ -866,24 +870,11 @@ void WebSocket::onClientOpenConnectionRequest()
         _readyState = State::CONNECTING;
         _readyStateMutex.unlock();
 
-        const char* prot = nullptr;
-        const char* address = nullptr;
-        const char* path = nullptr;
-        int port = -1;
-
-        // lws_parse_uri will modify its first parameter, but _url is the member variable that we don't want it to be changed.
-        // Therefore, use a temporary url variable here.
-        std::string tmpUrl = _url;
-        if (lws_parse_uri((char*)tmpUrl.c_str(), &prot, &address, &port, &path))
-        {
-            LOGE("lws_parse_uri failed: %s", _url.c_str());
-            return;
-        }
-
-        LOGD("protocol: %s, host: %s, port: %d, path: %s\n", prot, address, port, path);
+        Uri uri = Uri::parse(_url);
+        LOGD("scheme: %s, host: %s, port: %d, path: %s\n", uri.getScheme().c_str(), uri.getHostName().c_str(), static_cast<int>(uri.getPort()), uri.getPathEtc().c_str());
 
         int sslConnection = 0;
-        if (0 == strcmp(prot, "wss"))
+        if (uri.isSecure())
             sslConnection = LCCSCF_USE_SSL;
 
         struct lws_vhost* vhost = nullptr;
@@ -896,15 +887,25 @@ void WebSocket::onClientOpenConnectionRequest()
             vhost = createVhost(__defaultProtocols, sslConnection);
         }
 
+        int port = static_cast<int>(uri.getPort());
+        if (port == 0)
+            port = uri.isSecure() ? 443 : 80;
+
+        const std::string& hostName = uri.getHostName();
+        std::string path = uri.getPathEtc();
+        const std::string& authority = uri.getAuthority();
+        if (path.empty())
+            path = "/";
+
         struct lws_client_connect_info connectInfo;
         memset(&connectInfo, 0, sizeof(connectInfo));
         connectInfo.context = __wsContext;
-        connectInfo.address = address;
+        connectInfo.address = hostName.c_str();
         connectInfo.port = port;
         connectInfo.ssl_connection = sslConnection;
-        connectInfo.path = path;
-        connectInfo.host = address;
-        connectInfo.origin = address;
+        connectInfo.path = path.c_str();
+        connectInfo.host = hostName.c_str();
+        connectInfo.origin = authority.c_str();
         connectInfo.protocol = _clientSupportedProtocols.empty() ? nullptr : _clientSupportedProtocols.c_str();
         connectInfo.ietf_version_or_minus_one = -1;
         connectInfo.userdata = this;

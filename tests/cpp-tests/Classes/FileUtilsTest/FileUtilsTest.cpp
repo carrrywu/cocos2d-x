@@ -1,3 +1,27 @@
+/****************************************************************************
+ Copyright (c) 2017-2018 Xiamen Yaji Software Co., Ltd.
+ 
+ http://www.cocos2d-x.org
+ 
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ 
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+ 
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ THE SOFTWARE.
+ ****************************************************************************/
+
 #include "FileUtilsTest.h"
 
 USING_NS_CC;
@@ -35,7 +59,7 @@ void TestResolutionDirectories::onEnter()
     std::string ret;
 
     sharedFileUtils->purgeCachedEntries();
-    _defaultSearchPathArray = sharedFileUtils->getSearchPaths();
+    _defaultSearchPathArray = sharedFileUtils->getOriginalSearchPaths();
     std::vector<std::string> searchPaths = _defaultSearchPathArray;
     searchPaths.insert(searchPaths.begin(),   "Misc");
     sharedFileUtils->setSearchPaths(searchPaths);
@@ -89,7 +113,7 @@ void TestSearchPath::onEnter()
     std::string ret;
 
     sharedFileUtils->purgeCachedEntries();
-    _defaultSearchPathArray = sharedFileUtils->getSearchPaths();
+    _defaultSearchPathArray = sharedFileUtils->getOriginalSearchPaths();
     std::vector<std::string> searchPaths = _defaultSearchPathArray;
     std::string writablePath = sharedFileUtils->getWritablePath();
     std::string fileName = writablePath+"external.txt";
@@ -136,6 +160,29 @@ void TestSearchPath::onEnter()
             fclose(fp);
         }
     }
+
+    // FIXME: should fix the issue on Android
+#if (CC_TARGET_PLATFORM != CC_PLATFORM_ANDROID)
+
+    // Save old resource root path
+    std::string oldDefaultRootPath = sharedFileUtils->getDefaultResourceRootPath();
+    sharedFileUtils->setDefaultResourceRootPath(oldDefaultRootPath + "extensions");
+    auto sp1 = Sprite::create("orange_edit.png");
+    sp1->setPosition(VisibleRect::center());
+    addChild(sp1);
+
+    // Recover resource root path
+    sharedFileUtils->setDefaultResourceRootPath(oldDefaultRootPath);
+
+    auto oldSearchPaths = sharedFileUtils->getOriginalSearchPaths();
+    sharedFileUtils->addSearchPath("Images");
+    auto sp2 = Sprite::create("btn-about-normal.png");
+    sp2->setPosition(VisibleRect::center() + Vec2(0, -50));
+    addChild(sp2);
+
+    // Recover old search paths
+    sharedFileUtils->setSearchPaths(oldSearchPaths);
+#endif
 }
 
 void TestSearchPath::onExit()
@@ -155,7 +202,7 @@ std::string TestSearchPath::title() const
 
 std::string TestSearchPath::subtitle() const
 {
-    return "See the console";
+    return "See the console, can see a orange box and a 'about' picture";
 }
 
 // TestFilenameLookup

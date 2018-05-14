@@ -1,5 +1,6 @@
 /****************************************************************************
-Copyright (c) 2015-2017 Chukong Technologies Inc.
+Copyright (c) 2015-2016 Chukong Technologies Inc.
+Copyright (c) 2017-2018 Xiamen Yaji Software Co., Ltd.
 
 http://www.cocos2d-x.org
 
@@ -274,9 +275,9 @@ bool Terrain::initHeightMap(const std::string& heightMap)
 
 Terrain::Terrain()
 : _alphaMap(nullptr)
-, _stateBlock(nullptr)
 , _lightMap(nullptr)
 , _lightDir(-1.f, -1.f, 0.f)
+, _stateBlock(nullptr)
 {
     _stateBlock = RenderState::StateBlock::create();
     CC_SAFE_RETAIN(_stateBlock);
@@ -1709,8 +1710,6 @@ bool Terrain::Triangle::getIntersectPoint(const Ray& ray, Vec3& intersectPoint) 
 
     float fInvDet = 1.0f / det;
     t *= fInvDet;
-    u *= fInvDet;
-    v *= fInvDet;
 
     intersectPoint = ray._origin + ray._direction * t;
     return true;
